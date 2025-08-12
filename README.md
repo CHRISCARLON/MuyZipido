@@ -2,7 +2,7 @@
 
 Simple Rust library to stream and decompress zip files without loading everything into memory.
 
-Works well with zip files that have a corrupty central directory.
+Works well with zip files that have a corrupt central directory.
 
 Uses local file headers to process and decompess data on the fly.
 
