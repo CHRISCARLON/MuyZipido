@@ -49,6 +49,7 @@ pub struct MuyZipido {
     chunk_size: usize,
     buffer: Vec<u8>,
     offset: usize,
+    finished: bool,
 }
 
 impl MuyZipido {
@@ -66,6 +67,7 @@ impl MuyZipido {
             chunk_size,
             buffer: Vec::new(),
             offset: 0,
+            finished: false,
         })
     }
 
@@ -177,96 +179,111 @@ impl MuyZipido {
         Ok(data)
     }
 
-    pub fn process(&mut self) -> Result<Vec<ZipEntry>, ZipError> {
+    fn process_next_entry(&mut self) -> Result<Option<ZipEntry>, ZipError> {
         const LOCAL_FILE_HEADER_SIG: &[u8] = b"PK\x03\x04";
         const CENTRAL_DIR_SIG: &[u8] = b"PK\x01\x02";
         const END_CENTRAL_DIR_SIG: &[u8] = b"PK\x05\x06";
 
-        let mut entries = Vec::new();
-
-        loop {
-            let sig = self.read_exact(4)?;
-
-            if &sig == CENTRAL_DIR_SIG || &sig == END_CENTRAL_DIR_SIG {
-                println!("Reached end of local file entries");
-                break;
-            }
-
-            if &sig != LOCAL_FILE_HEADER_SIG {
-                return Err(ZipError::InvalidSignature(
-                    sig.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
-                ));
-            }
-
-            let header_data = self.read_exact(26)?;
-            let _version = u16::from_le_bytes([header_data[0], header_data[1]]);
-            let flags = u16::from_le_bytes([header_data[2], header_data[3]]);
-            let compression = u16::from_le_bytes([header_data[4], header_data[5]]);
-            let _mod_time = u16::from_le_bytes([header_data[6], header_data[7]]);
-            let _mod_date = u16::from_le_bytes([header_data[8], header_data[9]]);
-            let _crc32 = u32::from_le_bytes([
-                header_data[10],
-                header_data[11],
-                header_data[12],
-                header_data[13],
-            ]);
-            let compressed_size = u32::from_le_bytes([
-                header_data[14],
-                header_data[15],
-                header_data[16],
-                header_data[17],
-            ]);
-            let uncompressed_size = u32::from_le_bytes([
-                header_data[18],
-                header_data[19],
-                header_data[20],
-                header_data[21],
-            ]);
-            let filename_len = u16::from_le_bytes([header_data[22], header_data[23]]);
-            let extra_len = u16::from_le_bytes([header_data[24], header_data[25]]);
-
-            let filename_bytes = self.read_exact(filename_len as usize)?;
-            let filename = String::from_utf8_lossy(&filename_bytes).to_string();
-            let _extra_field = self.read_exact(extra_len as usize)?;
-
-            let has_data_descriptor = (flags & 0x08) != 0;
-
-            println!("\nProcessing: {}", filename);
-            println!("  Compression: {} (0=none, 8=deflate)", compression);
-
-            let data = if !has_data_descriptor && compressed_size > 0 {
-                let compressed_data = self.read_exact(compressed_size as usize)?;
-
-                match compression {
-                    0 => compressed_data,
-                    8 => {
-                        // Decompress
-                        let mut decoder = DeflateDecoder::new(&compressed_data[..]);
-                        let mut decompressed = Vec::new();
-                        decoder.read_to_end(&mut decompressed)?;
-                        decompressed
-                    }
-                    _ => {
-                        println!("  Skipping: unsupported compression method {}", compression);
-                        continue;
-                    }
-                }
-            } else if has_data_descriptor {
-                println!("  Streaming with data descriptor...");
-                self.process_with_descriptor(compression)?
-            } else {
-                Vec::new()
-            };
-
-            println!("  Processed {} bytes", data.len());
-
-            entries.push(ZipEntry {
-                filename,
-                uncompressed_size,
-                data,
-            });
+        if self.finished {
+            return Ok(None);
         }
 
-        Ok(entries)
+        let sig = self.read_exact(4)?;
+
+        if &sig == CENTRAL_DIR_SIG || &sig == END_CENTRAL_DIR_SIG {
+            println!("Reached end of local file entries");
+            self.finished = true;
+            return Ok(None);
+        }
+
+        if &sig != LOCAL_FILE_HEADER_SIG {
+            return Err(ZipError::InvalidSignature(
+                sig.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
+            ));
+        }
+
+        let header_data = self.read_exact(26)?;
+        let _version = u16::from_le_bytes([header_data[0], header_data[1]]);
+        let flags = u16::from_le_bytes([header_data[2], header_data[3]]);
+        let compression = u16::from_le_bytes([header_data[4], header_data[5]]);
+        let _mod_time = u16::from_le_bytes([header_data[6], header_data[7]]);
+        let _mod_date = u16::from_le_bytes([header_data[8], header_data[9]]);
+        let _crc32 = u32::from_le_bytes([
+            header_data[10],
+            header_data[11],
+            header_data[12],
+            header_data[13],
+        ]);
+        let compressed_size = u32::from_le_bytes([
+            header_data[14],
+            header_data[15],
+            header_data[16],
+            header_data[17],
+        ]);
+        let uncompressed_size = u32::from_le_bytes([
+            header_data[18],
+            header_data[19],
+            header_data[20],
+            header_data[21],
+        ]);
+        let filename_len = u16::from_le_bytes([header_data[22], header_data[23]]);
+        let extra_len = u16::from_le_bytes([header_data[24], header_data[25]]);
+
+        let filename_bytes = self.read_exact(filename_len as usize)?;
+        let filename = String::from_utf8_lossy(&filename_bytes).to_string();
+        let _extra_field = self.read_exact(extra_len as usize)?;
+
+        let has_data_descriptor = (flags & 0x08) != 0;
+
+        println!("\nProcessing: {}", filename);
+        println!("  Compression: {} (0=none, 8=deflate)", compression);
+
+        let data = if !has_data_descriptor && compressed_size > 0 {
+            let compressed_data = self.read_exact(compressed_size as usize)?;
+
+            match compression {
+                0 => compressed_data,
+                8 => {
+                    let mut decoder = DeflateDecoder::new(&compressed_data[..]);
+                    let mut decompressed = Vec::new();
+                    decoder.read_to_end(&mut decompressed)?;
+                    decompressed
+                }
+                _ => {
+                    return Err(ZipError::Decompression(format!(
+                        "Unsupported compression method: {}",
+                        compression
+                    )));
+                }
+            }
+        } else if has_data_descriptor {
+            println!("  Streaming with data descriptor...");
+            self.process_with_descriptor(compression)?
+        } else {
+            Vec::new()
+        };
+
+        println!("  Processed {} bytes", data.len());
+
+        Ok(Some(ZipEntry {
+            filename,
+            uncompressed_size,
+            data,
+        }))
+    }
+}
+
+impl Iterator for MuyZipido {
+    type Item = Result<ZipEntry, ZipError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.process_next_entry() {
+            Ok(Some(entry)) => Some(Ok(entry)),
+            Ok(None) => None,
+            Err(e) => {
+                self.finished = true;
+                Some(Err(e))
+            }
+        }
     }
 }
