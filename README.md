@@ -1,4 +1,4 @@
-# MuyZipido
+# MuyZipido💨
 
 Simple Rust library to stream and decompress zip files without loading everything into memory.
 
