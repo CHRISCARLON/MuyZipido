@@ -1,4 +1,7 @@
+mod progress_bar;
+
 use flate2::read::DeflateDecoder;
+use progress_bar::ProgressBar;
 use std::error::Error;
 use std::fmt;
 use std::io::Read;
@@ -50,6 +53,7 @@ pub struct MuyZipido {
     buffer: Vec<u8>,
     offset: usize,
     finished: bool,
+    progress_bar: Option<ProgressBar>,
 }
 
 impl MuyZipido {
@@ -57,9 +61,7 @@ impl MuyZipido {
         let response = reqwest::blocking::get(url)?;
 
         if !response.status().is_success() {
-            return Err(ZipError::Http(reqwest::Error::from(
-                response.error_for_status().unwrap_err(),
-            )));
+            return Err(ZipError::Http(response.error_for_status().unwrap_err()));
         }
 
         Ok(Self {
@@ -68,7 +70,25 @@ impl MuyZipido {
             buffer: Vec::new(),
             offset: 0,
             finished: false,
+            progress_bar: None,
         })
+    }
+
+    pub fn with_progress(mut self) -> Self {
+        let content_length = if let Some(response) = &self.response {
+            response
+                .headers()
+                .get("content-length")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|s| s.parse::<usize>().ok())
+        } else {
+            None
+        };
+
+        let mut progress_bar = ProgressBar::new(content_length);
+        progress_bar.set_description("Downloading ZIP".to_string());
+        self.progress_bar = Some(progress_bar);
+        self
     }
 
     fn read_exact(&mut self, size: usize) -> Result<Vec<u8>, ZipError> {
@@ -83,6 +103,10 @@ impl MuyZipido {
 
                 chunk.truncate(bytes_read);
                 self.buffer.extend_from_slice(&chunk);
+
+                if let Some(ref mut progress_bar) = self.progress_bar {
+                    progress_bar.update(bytes_read);
+                }
             } else {
                 return Err(ZipError::UnexpectedEof);
             }
@@ -190,16 +214,18 @@ impl MuyZipido {
 
         let sig = self.read_exact(4)?;
 
-        if &sig == CENTRAL_DIR_SIG || &sig == END_CENTRAL_DIR_SIG {
+        if sig == CENTRAL_DIR_SIG || sig == END_CENTRAL_DIR_SIG {
             println!("Reached end of local file entries");
             self.finished = true;
             return Ok(None);
         }
 
-        if &sig != LOCAL_FILE_HEADER_SIG {
-            return Err(ZipError::InvalidSignature(
-                sig.iter().map(|b| format!("{:02x}", b)).collect::<String>(),
-            ));
+        if sig != LOCAL_FILE_HEADER_SIG {
+            let mut hex_string = String::with_capacity(sig.len() * 2);
+            for b in &sig {
+                hex_string.push_str(&format!("{:02x}", b));
+            }
+            return Err(ZipError::InvalidSignature(hex_string));
         }
 
         let header_data = self.read_exact(26)?;
@@ -270,6 +296,14 @@ impl MuyZipido {
             uncompressed_size,
             data,
         }))
+    }
+}
+
+impl Drop for MuyZipido {
+    fn drop(&mut self) {
+        if let Some(ref progress_bar) = self.progress_bar {
+            progress_bar.finish();
+        }
     }
 }
 
