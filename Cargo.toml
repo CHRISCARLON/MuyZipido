@@ -8,7 +8,6 @@ readme = "README.md"
 repository = "https://github.com/CHRISCARLON/MuyZipido"
 license = "MIT"
 keywords = ["zip", "stream", "decompress", "archive"]
-categories = ["data-engineering"]
 
 [dependencies]
 flate2 = "1.1.2"
