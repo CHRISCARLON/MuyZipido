@@ -1,4 +1,4 @@
-mod progress_bar;
+pub mod progress_bar;
 
 use flate2::read::DeflateDecoder;
 use progress_bar::ProgressBar;
@@ -74,7 +74,11 @@ impl MuyZipido {
         })
     }
 
-    pub fn with_progress(mut self) -> Self {
+    pub fn with_progress(
+        mut self,
+        style: progress_bar::Style,
+        color: progress_bar::Colour,
+    ) -> Self {
         let content_length = if let Some(response) = &self.response {
             response
                 .headers()
@@ -85,8 +89,10 @@ impl MuyZipido {
             None
         };
 
-        let mut progress_bar = ProgressBar::new(content_length);
-        progress_bar.set_description("Downloading ZIP".to_string());
+        let progress_bar = ProgressBar::new(content_length)
+            .with_description("Downloading ZIP".to_string())
+            .with_style(style)
+            .with_color(color);
         self.progress_bar = Some(progress_bar);
         self
     }

@@ -1,10 +1,13 @@
-use muy_zipido::MuyZipido;
+use muy_zipido::{
+    MuyZipido,
+    progress_bar::{Colour, Style},
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = "https://api.os.uk/downloads/v1/products/CodePointOpen/downloads?area=GB&format=GeoPackage&redirect";
     println!("Fetching and processing ZIP from: {}", url);
 
-    let extractor = MuyZipido::new(url, 8192)?.with_progress();
+    let extractor = MuyZipido::new(url, 10240)?.with_progress(Style::Blocks, Colour::Magenta);
 
     let mut total_entries = 0;
     let mut total_bytes = 0;

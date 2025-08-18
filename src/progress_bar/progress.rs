@@ -1,3 +1,4 @@
+use super::style::Style;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
@@ -8,7 +9,13 @@ pub struct ProgressBar {
     description: Option<String>,
     last_render_time: Instant,
     min_render_interval: Duration,
+    smoothed_speed: Option<f64>,
+    smoothing_factor: f64,
+    style: Style,
+    use_colour: Colour,
 }
+
+const RESET: &str = "\x1b[0m";
 
 impl ProgressBar {
     pub fn new(total_size: Option<usize>) -> Self {
@@ -20,21 +27,51 @@ impl ProgressBar {
             description: None,
             last_render_time: now,
             min_render_interval: Duration::from_millis(100),
+            smoothed_speed: None,
+            smoothing_factor: 0.3,
+            style: Style::default(),
+            use_colour: Colour::default(),
         }
+    }
+
+    pub fn with_description(mut self, desc: String) -> Self {
+        self.description = Some(desc);
+        self
+    }
+
+    pub fn with_style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn with_color(mut self, color: Colour) -> Self {
+        self.use_colour = color;
+        self
     }
 
     pub fn update(&mut self, bytes_processed: usize) {
         self.current_chunk += bytes_processed;
+
+        let elapsed = self.start_time.elapsed();
+        let instant_speed = if elapsed.as_secs_f64() > 0.0 {
+            self.current_chunk as f64 / elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+
+        self.smoothed_speed = match self.smoothed_speed {
+            None => Some(instant_speed),
+            Some(prev_speed) => {
+                let beta = self.smoothing_factor;
+                Some(instant_speed * beta + prev_speed * (1.0 - beta))
+            }
+        };
 
         let now = Instant::now();
         if now.duration_since(self.last_render_time) >= self.min_render_interval {
             self.render();
             self.last_render_time = now;
         }
-    }
-
-    pub fn set_description(&mut self, desc: String) {
-        self.description = Some(desc);
     }
 
     pub fn finish(&mut self) {
@@ -44,14 +81,8 @@ impl ProgressBar {
 
     fn render(&self) {
         let elapsed = self.start_time.elapsed();
-        let speed = if elapsed.as_secs() > 0 {
-            self.current_chunk as f64 / elapsed.as_secs_f64()
-        } else {
-            0.0
-        };
-
+        let speed = self.smoothed_speed.unwrap_or(0.0);
         let speed_mb = speed / (1024.0 * 1024.0);
-
         let desc = match &self.description {
             Some(d) => format!("{}: ", d),
             None => String::new(),
@@ -62,7 +93,30 @@ impl ProgressBar {
                 let percentage = (self.current_chunk as f64 / total as f64) * 100.0;
                 let bar_width = 40;
                 let filled = ((percentage / 100.0) * bar_width as f64) as usize;
-                let bar = "█".repeat(filled) + &"░".repeat(bar_width - filled);
+                let bar = match self.use_colour {
+                    Colour::None => {
+                        // No color
+                        self.style.filled_char().to_string().repeat(filled)
+                            + &self
+                                .style
+                                .empty_char()
+                                .to_string()
+                                .repeat(bar_width - filled)
+                    }
+                    _ => {
+                        // With color
+                        format!(
+                            "{}{}{}{}",
+                            self.use_colour.ansi_code(),
+                            self.style.filled_char().to_string().repeat(filled),
+                            RESET,
+                            self.style
+                                .empty_char()
+                                .to_string()
+                                .repeat(bar_width - filled)
+                        )
+                    }
+                };
 
                 let eta_secs = if speed > 0.0 && total > self.current_chunk {
                     (total - self.current_chunk) as f64 / speed
@@ -99,6 +153,39 @@ impl ProgressBar {
 
         eprint!("{}", output);
         let _ = io::stderr().flush();
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Colour {
+    None,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+}
+
+impl Colour {
+    pub fn ansi_code(&self) -> &'static str {
+        match self {
+            Colour::None => "",
+            Colour::Red => "\x1b[31m",
+            Colour::Green => "\x1b[32m",
+            Colour::Yellow => "\x1b[33m",
+            Colour::Blue => "\x1b[34m",
+            Colour::Magenta => "\x1b[35m",
+            Colour::Cyan => "\x1b[36m",
+            Colour::White => "\x1b[37m",
+        }
+    }
+}
+
+impl Default for Colour {
+    fn default() -> Self {
+        Colour::Cyan
     }
 }
 
