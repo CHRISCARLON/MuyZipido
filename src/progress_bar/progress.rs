@@ -1,33 +1,44 @@
 use std::io::{self, Write};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct ProgressBar {
     total_size: Option<usize>,
     current_chunk: usize,
     start_time: Instant,
     description: Option<String>,
+    last_render_time: Instant,
+    min_render_interval: Duration,
 }
 
 impl ProgressBar {
     pub fn new(total_size: Option<usize>) -> Self {
+        let now = Instant::now();
         ProgressBar {
             total_size,
             current_chunk: 0,
-            start_time: Instant::now(),
+            start_time: now,
             description: None,
+            last_render_time: now,
+            min_render_interval: Duration::from_millis(100),
         }
     }
 
     pub fn update(&mut self, bytes_processed: usize) {
         self.current_chunk += bytes_processed;
-        self.render();
+
+        let now = Instant::now();
+        if now.duration_since(self.last_render_time) >= self.min_render_interval {
+            self.render();
+            self.last_render_time = now;
+        }
     }
 
     pub fn set_description(&mut self, desc: String) {
         self.description = Some(desc);
     }
 
-    pub fn finish(&self) {
+    pub fn finish(&mut self) {
+        self.render();
         eprintln!();
     }
 
@@ -48,7 +59,6 @@ impl ProgressBar {
 
         let output = match self.total_size {
             Some(total) if total > 0 => {
-                // Known total size - show percentage bar
                 let percentage = (self.current_chunk as f64 / total as f64) * 100.0;
                 let bar_width = 40;
                 let filled = ((percentage / 100.0) * bar_width as f64) as usize;
@@ -72,7 +82,6 @@ impl ProgressBar {
                 )
             }
             _ => {
-                // Unknown total size - show spinning indicator
                 let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
                 let spinner_idx = (elapsed.as_millis() / 100) % spinner_chars.len() as u128;
                 let spinner = spinner_chars[spinner_idx as usize];

@@ -301,7 +301,7 @@ impl MuyZipido {
 
 impl Drop for MuyZipido {
     fn drop(&mut self) {
-        if let Some(ref progress_bar) = self.progress_bar {
+        if let Some(ref mut progress_bar) = self.progress_bar {
             progress_bar.finish();
         }
     }
