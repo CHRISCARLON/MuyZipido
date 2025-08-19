@@ -1,4 +1,5 @@
 # MuyZipido💨
+<img alt="Crates.io Version" src="https://img.shields.io/crates/v/muy_zipido"> <img alt="Crates.io Downloads" src="https://img.shields.io/crates/d/muy_zipido">
 
 Simple Rust library to stream and decompress zip files without loading everything into memory.
 
