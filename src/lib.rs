@@ -146,12 +146,12 @@ impl MuyZipido {
                     if last_4.as_slice() == DATA_DESC_SIG {
                         compressed_data.truncate(compressed_data.len() - 4);
 
-                    let mut decoder = DeflateDecoder::new(&compressed_data[..]);
-                    decoder.read_to_end(&mut data)?;
+                        let mut decoder = DeflateDecoder::new(&compressed_data[..]);
+                        decoder.read_to_end(&mut data)?;
 
-                    let _crc = self.read_exact(4)?;
-                    let _compressed_size = self.read_exact(4)?;
-                    let _uncompressed_size = self.read_exact(4)?;
+                        let _crc = self.read_exact(4)?;
+                        let _compressed_size = self.read_exact(4)?;
+                        let _uncompressed_size = self.read_exact(4)?;
 
                         break;
                     }
@@ -174,9 +174,9 @@ impl MuyZipido {
                     if last_4.as_slice() == DATA_DESC_SIG {
                         data.truncate(data.len() - 4);
 
-                    let _crc = self.read_exact(4)?;
-                    let _compressed_size = self.read_exact(4)?;
-                    let _uncompressed_size = self.read_exact(4)?;
+                        let _crc = self.read_exact(4)?;
+                        let _compressed_size = self.read_exact(4)?;
+                        let _uncompressed_size = self.read_exact(4)?;
 
                         break;
                     }
