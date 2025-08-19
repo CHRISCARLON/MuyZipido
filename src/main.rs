@@ -4,7 +4,7 @@ use muy_zipido::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let url = "URL_HERE";
+    let url = "https://api.os.uk/downloads/v1/products/BuiltUpAreas/downloads?area=GB&format=GeoPackage&redirect";
     println!("Fetching and processing ZIP from: {}", url);
 
     let extractor = MuyZipido::new(url, 10240)?.with_progress(Style::Blocks, Colour::Magenta);

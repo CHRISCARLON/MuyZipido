@@ -1,5 +1,7 @@
+pub mod circular_buffer;
 pub mod progress_bar;
 
+use circular_buffer::CircularBuffer;
 use flate2::read::DeflateDecoder;
 use progress_bar::ProgressBar;
 use std::error::Error;
@@ -129,8 +131,7 @@ impl MuyZipido {
         const DATA_DESC_SIG: [u8; 4] = [0x50, 0x4b, 0x07, 0x08];
 
         let mut data = Vec::new();
-        let mut window = [0u8; 4];
-        let mut window_pos = 0;
+        let mut sig_buffer: CircularBuffer<u8> = CircularBuffer::new(4);
 
         if compression == 8 {
             let mut compressed_data = Vec::new();
@@ -138,19 +139,12 @@ impl MuyZipido {
             loop {
                 let byte = self.read_exact(1)?[0];
                 compressed_data.push(byte);
+                sig_buffer.write(byte);
 
-                window[window_pos] = byte;
-                window_pos = (window_pos + 1) % 4;
-
-                let check_sig = [
-                    window[window_pos % 4],
-                    window[(window_pos + 1) % 4],
-                    window[(window_pos + 2) % 4],
-                    window[(window_pos + 3) % 4],
-                ];
-
-                if check_sig == DATA_DESC_SIG {
-                    compressed_data.truncate(compressed_data.len() - 4);
+                if sig_buffer.len() >= 4 {
+                    let last_4 = sig_buffer.get_last_n(4);
+                    if last_4.as_slice() == DATA_DESC_SIG {
+                        compressed_data.truncate(compressed_data.len() - 4);
 
                     let mut decoder = DeflateDecoder::new(&compressed_data[..]);
                     decoder.read_to_end(&mut data)?;
@@ -159,7 +153,8 @@ impl MuyZipido {
                     let _compressed_size = self.read_exact(4)?;
                     let _uncompressed_size = self.read_exact(4)?;
 
-                    break;
+                        break;
+                    }
                 }
 
                 if compressed_data.len() > 100_000_000 {
@@ -172,25 +167,19 @@ impl MuyZipido {
             loop {
                 let byte = self.read_exact(1)?[0];
                 data.push(byte);
+                sig_buffer.write(byte);
 
-                window[window_pos] = byte;
-                window_pos = (window_pos + 1) % 4;
-
-                let check_sig = [
-                    window[window_pos % 4],
-                    window[(window_pos + 1) % 4],
-                    window[(window_pos + 2) % 4],
-                    window[(window_pos + 3) % 4],
-                ];
-
-                if check_sig == DATA_DESC_SIG {
-                    data.truncate(data.len() - 4);
+                if sig_buffer.len() >= 4 {
+                    let last_4 = sig_buffer.get_last_n(4);
+                    if last_4.as_slice() == DATA_DESC_SIG {
+                        data.truncate(data.len() - 4);
 
                     let _crc = self.read_exact(4)?;
                     let _compressed_size = self.read_exact(4)?;
                     let _uncompressed_size = self.read_exact(4)?;
 
-                    break;
+                        break;
+                    }
                 }
 
                 if data.len() > 100_000_000 {
